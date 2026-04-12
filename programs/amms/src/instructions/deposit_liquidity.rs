@@ -1,43 +1,65 @@
 use anchor_lang::prelude::*;
-use anchor_spl::{associated_token::AssociatedToken, token_2022::{ MintToChecked, mint_to_checked}, token_interface::{Mint, Token2022, TokenAccount}};
+use anchor_spl::{associated_token::AssociatedToken, token_2022::{ MintToChecked, TransferChecked, mint_to_checked, transfer_checked}, token_interface::{Mint, Token2022, TokenAccount}};
 
 use crate::{CpammsError, PoolConfig};
 pub fn process_deposit_liquidity(ctx:Context<DepositLiquidity>,amounts:AmountMinMaxAmount)->Result<()>{
-    let reserve_a =  &mut ctx.accounts.reserve_a;
-    let reserve_b = &mut ctx.accounts.reserve_b;
+        let pool_config = &ctx.accounts.pool_config;
+        let reserve_a = &mut ctx.accounts.reserve_a;
+        let reserve_b = &mut ctx.accounts.reserve_b;
 
     let is_first_deposit = reserve_a.amount == 0 && reserve_b.amount == 0;
-    let lp_tokens = if is_first_deposit {
+    let (deposit_a,deposit_b) =  if is_first_deposit {
         match amounts {
             AmountMinMaxAmount::AmountAMinMaxAmountB(amount_a,min_amount_b ,max_amount_b ) => {
-                let deposit_a = amount_a;
                 // let deposit_b = (min_amount_b.checked_add(max_amount_b).unwrap()).checked_div_euclid(2).unwrap();
                 let deposit_b = min_amount_b.midpoint(max_amount_b);
-                 deposit_a.checked_mul(deposit_b).unwrap().isqrt()
-
+                (amount_a,deposit_b)
             },
             AmountMinMaxAmount::AmountBMinMaxAmountA(amount_b,min_amount_a ,max_amount_a ) => {
-                let deposit_b = amount_b;
                 let deposit_a = min_amount_a.midpoint(max_amount_a);
-                 deposit_a.checked_mul(deposit_b).unwrap().isqrt()
+                (deposit_a,amount_b)
             }
         }
     }else {
-          0
+          (0,0)
         };
-        let pool_config = &ctx.accounts.pool_config;
+
+        let lp_tokens = if is_first_deposit {
+        deposit_a.checked_mul(deposit_b).unwrap().isqrt()
+        }else {
+            0
+        };
         let fees_in_basis_points = pool_config.fees_in_basis_points.to_le_bytes();
         let pool_authority_seeds:&[&[u8]] = &[b"pool_authority",fees_in_basis_points.as_ref() ,pool_config.mint_a.as_ref(),pool_config.mint_b.as_ref(),&[ctx.bumps.pool_authority]];
         let signer_seeds = [&pool_authority_seeds[..]];
         
-        let mint_to_cpi_context = CpiContext::new(ctx.accounts.token_program.key(),MintToChecked{
+        let mint_lp_tokens_cpi_context = CpiContext::new(ctx.accounts.token_program.key(),MintToChecked{
             mint:ctx.accounts.lp_mint.to_account_info(),
             to:ctx.accounts.token_account_lp.to_account_info(),
             authority:ctx.accounts.pool_authority.to_account_info()
         }).with_signer(&signer_seeds);
 
+        mint_to_checked(mint_lp_tokens_cpi_context, lp_tokens,ctx.accounts.lp_mint.decimals)?;
 
-        mint_to_checked(mint_to_cpi_context, lp_tokens,ctx.accounts.lp_mint.decimals)
+        let transfer_token_a_cpi_context = CpiContext::new(ctx.accounts.token_program.key(),TransferChecked{
+            from:ctx.accounts.token_account_a.to_account_info(),
+            to:ctx.accounts.reserve_a.to_account_info(),
+            mint:ctx.accounts.mint_a.to_account_info(),
+            authority:ctx.accounts.depositor.to_account_info()
+        });
+
+        transfer_checked(transfer_token_a_cpi_context, deposit_a, ctx.accounts.mint_a.decimals)?;
+
+        let transfer_token_b_cpi_context = CpiContext::new(ctx.accounts.token_program.key(),TransferChecked{
+            from:ctx.accounts.token_account_b.to_account_info(),
+            to:ctx.accounts.reserve_b.to_account_info(),
+            mint:ctx.accounts.mint_b.to_account_info(),
+            authority:ctx.accounts.depositor.to_account_info()
+        });
+
+        transfer_checked(transfer_token_b_cpi_context, deposit_b, ctx.accounts.mint_b.decimals)
+
+
 }
 
 #[derive(Accounts)]
@@ -73,6 +95,7 @@ pub struct DepositLiquidity<'info>{
         mut,
         mint::authority = pool_authority,
         mint::decimals = 0,
+        mint::token_program = token_program,
         seeds = [b"lp_mint",fees_in_basis_points.to_le_bytes().as_ref() ,mint_a.key().as_ref(),mint_b.key().as_ref()],
         bump,
     )]
@@ -88,7 +111,7 @@ pub struct DepositLiquidity<'info>{
     )]
     pub token_account_lp:Box<InterfaceAccount<'info,TokenAccount>>,
 
-    // redundant if reserve_a and reserve_b exists then this must exist too. ?
+    // redundant if reserve_a and reserve_b exists then this must exist too. ? 
     #[account(
         seeds = [b"pool_config",fees_in_basis_points.to_le_bytes().as_ref() ,mint_a.key().as_ref(),mint_b.key().as_ref()],
         bump = pool_config.bump,

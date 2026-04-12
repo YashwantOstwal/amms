@@ -12,16 +12,23 @@ import {
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
 import assert from "assert";
-const provider = anchor.AnchorProvider.env();
+import {
+  getLpAssociatedTokenAccount,
+  getLpAssociatedTokenAddressAsync,
+  getLpMintAddressSync,
+  sleep,
+} from "./helpers";
+
+export const provider = anchor.AnchorProvider.env();
 anchor.setProvider(provider);
 
 const { connection } = provider;
 const { payer } = provider.wallet;
-const program = anchor.workspace.amms as Program<Amms>;
+export const program = anchor.workspace.amms as Program<Amms>;
 
 const mints: Record<string, PublicKey> = {};
 
-interface Pool {
+export interface Pool {
   mintA: PublicKey;
   mintB: PublicKey;
   poolConfig: PublicKey;
@@ -31,15 +38,7 @@ interface Pool {
   feesInBasisPoints: number;
 }
 const pools: Record<string, Pool> = {};
-const pdaStaticSeeds: Record<string, string> = {
-  poolConfig: "pool_config",
-  poolAuthority: "pool_authority",
-  lpMint: "lp_mint",
-};
 
-function getLpMintAddressAsync(pool: Pool) {
-  return;
-}
 describe("amms", () => {
   // Configure the client to use the local cluster.
 
@@ -256,18 +255,37 @@ describe("amms", () => {
     } = await connection.getTokenAccountBalance(tokenBAddress);
     assert.equal(accountBBalance, mintAmount.toString());
 
+    const lpTokensSupposedToBeMinted = Math.sqrt(10000000 * 1000000000);
+    const lpTokensMinted = Math.floor(lpTokensSupposedToBeMinted);
+    const tokenAPerShare = (10000000 * Math.pow(10, -9)) / lpTokensMinted;
+    const tokenBPerShare = (1000000000 * Math.pow(10, -9)) / lpTokensMinted;
+
+    const lossOfAssetA =
+      (lpTokensSupposedToBeMinted - lpTokensMinted) * tokenAPerShare;
+    const lossOfAssetB =
+      (lpTokensSupposedToBeMinted - lpTokensMinted) * tokenBPerShare;
+
+    // console.log(lossOfAssetA, lossOfAssetB); 0 as the geometric mean is a perfect square.
     await program.methods
       .depositLiquidity(pools.ab.feesInBasisPoints, {
         amountAMinMaxAmountB: [
           new anchor.BN(10000000),
           new anchor.BN(1000000000 - 0.05 * 1000000000),
           new anchor.BN(1000000000 + 0.05 * 1000000000),
+          // first deposit will be median of the above 2 which turns out to be 1000000000
         ],
       })
       .accountsPartial({ depositor: alice.publicKey, ...pools.ab })
       .signers([alice])
       .rpc();
 
-    const;
+    const lpTokenAccount = await getLpAssociatedTokenAccount(
+      alice.publicKey,
+      pools.ab,
+    );
+    assert.equal(lpTokenAccount.amount, lpTokensMinted);
   });
+
+  it("Swap token a for token b");
+  it("add liquidity");
 });

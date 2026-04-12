@@ -52,6 +52,7 @@ pub struct CreateCpammPool<'info>{
         payer = payer,
         associated_token::mint = mint_a,
         associated_token::authority = pool_authority,
+        associated_token::token_program = token_program
     )]
     pub reserve_a:InterfaceAccount<'info,TokenAccount>,
 
@@ -60,6 +61,7 @@ pub struct CreateCpammPool<'info>{
         payer = payer,
         associated_token::mint = mint_b,
         associated_token::authority = pool_authority,
+        associated_token::token_program = token_program
     )]
     pub reserve_b:InterfaceAccount<'info,TokenAccount>,
 
@@ -68,6 +70,7 @@ pub struct CreateCpammPool<'info>{
         payer = payer,
         mint::authority = pool_authority,
         mint::decimals = 0,
+        mint::token_program = token_program,
         seeds = [b"lp_mint",fees_in_basis_points.to_le_bytes().as_ref() ,mint_a.key().as_ref(),mint_b.key().as_ref()],
         bump,
     )]
