@@ -6,5 +6,8 @@ pub enum CpammsError{
     MintANotLexicographicallyLessThanMintB,
 
     #[msg("error")]
-    NoSuchPoolExist
+    NoSuchPoolExist,
+
+    #[msg("error")]
+    DepositDoesnotExemptTheMinThreshold
 }

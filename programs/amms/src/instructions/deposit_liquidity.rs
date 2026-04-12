@@ -25,7 +25,9 @@ pub fn process_deposit_liquidity(ctx:Context<DepositLiquidity>,amounts:AmountMin
         };
 
         let lp_tokens = if is_first_deposit {
-        deposit_a.checked_mul(deposit_b).unwrap().isqrt()
+            let lp_tokens_minted = deposit_a.checked_mul(deposit_b).unwrap().isqrt();
+            require!(lp_tokens_minted >= 1000,CpammsError::DepositDoesnotExemptTheMinThreshold);
+            lp_tokens_minted - 1000
         }else {
             0
         };

@@ -16,7 +16,8 @@ import {
   getLpAssociatedTokenAccount,
   getLpAssociatedTokenAddressAsync,
   getLpMintAddressSync,
-  sleep,
+  getReserveAccounts,
+  getReserveAddresses,
 } from "./helpers";
 
 export const provider = anchor.AnchorProvider.env();
@@ -97,7 +98,7 @@ describe("amms", () => {
     assert(mintBAccountData.mintAuthority.equals(alice.publicKey), "6");
     assert.equal(mintBAccountData.decimals, 9, "7");
 
-    if (mintAPubkey.toString() < mintBPubkey.toString()) {
+    if (mintAPubkey.toBase58() < mintBPubkey.toBase58()) {
       mints.mintA = mintAPubkey;
       mints.mintB = mintBPubkey;
     } else {
@@ -156,38 +157,6 @@ describe("amms", () => {
       .signers([alice])
       .rpc();
 
-    const poolAccountData = await program.account.poolConfig.fetch(
-      poolConfigAddress,
-    );
-
-    assert.equal(poolAccountData.feesInBasisPoints, feesInBasisPoints, "1");
-    assert(poolAccountData.mintA.equals(mints.mintA), "2");
-    assert(poolAccountData.mintB.equals(mints.mintB), "3");
-    assert(
-      poolAccountData.mintA.toString() < poolAccountData.mintB.toString(),
-      "4",
-    );
-
-    assert.equal(poolAccountData.bump, poolConfigBump, "5");
-
-    const reserveAAccountData = await getAccount(
-      connection,
-      reserveAAddress,
-      undefined,
-      TOKEN_2022_PROGRAM_ID,
-    );
-    assert.equal(reserveAAccountData.amount, 0, "6");
-    assert(reserveAAccountData.owner.equals(poolAuthorityAddress), "7");
-
-    const reserveBAccountData = await getAccount(
-      connection,
-      reserveBAddress,
-      undefined,
-      TOKEN_2022_PROGRAM_ID,
-    );
-    assert.equal(reserveBAccountData.amount, 0, "8");
-    assert(reserveBAccountData.owner.equals(poolAuthorityAddress), "9");
-
     pools.ab = {
       mintA: mints.mintA,
       mintB: mints.mintB,
@@ -197,6 +166,29 @@ describe("amms", () => {
       reserveB: reserveBAddress,
       feesInBasisPoints,
     };
+
+    const poolConfigAccount = await program.account.poolConfig.fetch(
+      poolConfigAddress,
+    );
+
+    assert.equal(poolConfigAccount.feesInBasisPoints, feesInBasisPoints, "1");
+    assert(poolConfigAccount.mintA.equals(mints.mintA), "2");
+    assert(poolConfigAccount.mintB.equals(mints.mintB), "3");
+    assert(
+      poolConfigAccount.mintA.toString() < poolConfigAccount.mintB.toString(),
+      "4",
+    );
+
+    assert.equal(poolConfigAccount.bump, poolConfigBump, "5");
+
+    const [reserveAAccount, reserveBAccount] = await getReserveAccounts(
+      pools.ab,
+    );
+    assert.equal(reserveAAccount.amount, 0, "6");
+    assert(reserveAAccount.owner.equals(poolAuthorityAddress), "7");
+
+    assert.equal(reserveBAccount.amount, 0, "8");
+    assert(reserveBAccount.owner.equals(poolAuthorityAddress), "9");
   });
 
   it("First deposit to the pool created previously", async () => {
@@ -256,7 +248,7 @@ describe("amms", () => {
     assert.equal(accountBBalance, mintAmount.toString());
 
     const lpTokensSupposedToBeMinted = Math.sqrt(10000000 * 1000000000);
-    const lpTokensMinted = Math.floor(lpTokensSupposedToBeMinted);
+    const lpTokensMinted = Math.floor(lpTokensSupposedToBeMinted - 1000); // 1000 tokens not minted to inflate the share price to asset ratio 1000x expensive.
     const tokenAPerShare = (10000000 * Math.pow(10, -9)) / lpTokensMinted;
     const tokenBPerShare = (1000000000 * Math.pow(10, -9)) / lpTokensMinted;
 
@@ -265,7 +257,7 @@ describe("amms", () => {
     const lossOfAssetB =
       (lpTokensSupposedToBeMinted - lpTokensMinted) * tokenBPerShare;
 
-    // console.log(lossOfAssetA, lossOfAssetB); 0 as the geometric mean is a perfect square.
+    // console.log(lossOfAssetA, lossOfAssetB); 0 as tokenA * tokenB is a perfect square.
     await program.methods
       .depositLiquidity(pools.ab.feesInBasisPoints, {
         amountAMinMaxAmountB: [
@@ -279,11 +271,23 @@ describe("amms", () => {
       .signers([alice])
       .rpc();
 
-    const lpTokenAccount = await getLpAssociatedTokenAccount(
+    const lpTokenAddress = await getLpAssociatedTokenAddressAsync(
       alice.publicKey,
       pools.ab,
     );
-    assert.equal(lpTokenAccount.amount, lpTokensMinted);
+    const {
+      value: { amount: lpTokenBalance },
+    } = await connection.getTokenAccountBalance(lpTokenAddress);
+    assert.equal(lpTokenBalance, lpTokensMinted.toString());
+
+    const [reserveAAddress, reserveBAddress] = getReserveAddresses(pools.ab);
+    const [reserveABalance, reserveBBalance] = await Promise.all([
+      connection.getTokenAccountBalance(reserveAAddress),
+      connection.getTokenAccountBalance(reserveBAddress),
+    ]);
+
+    assert.equal(reserveABalance.value.amount, (10000000).toString());
+    assert.equal(reserveBBalance.value.amount, (1000000000).toString());
   });
 
   it("Swap token a for token b");
