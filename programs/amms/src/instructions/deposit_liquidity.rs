@@ -27,7 +27,7 @@ pub fn process_deposit_liquidity(ctx:Context<DepositLiquidity>,amounts:AmountMin
         };
         let pool_config = &ctx.accounts.pool_config;
         let fees_in_basis_points = pool_config.fees_in_basis_points.to_le_bytes();
-        let pool_authority_seeds:&[&[u8]] = &[b"pool_authority",fees_in_basis_points.as_ref() ,pool_config.mint_a.as_ref(),pool_config.mint_b.as_ref()];
+        let pool_authority_seeds:&[&[u8]] = &[b"pool_authority",fees_in_basis_points.as_ref() ,pool_config.mint_a.as_ref(),pool_config.mint_b.as_ref(),&[ctx.bumps.pool_authority]];
         let signer_seeds = [&pool_authority_seeds[..]];
         
         let mint_to_cpi_context = CpiContext::new(ctx.accounts.token_program.key(),MintToChecked{
@@ -46,23 +46,28 @@ pub fn process_deposit_liquidity(ctx:Context<DepositLiquidity>,amounts:AmountMin
 pub struct DepositLiquidity<'info>{
 
     #[account(mut)]
-    pub depositor:SystemAccount<'info>,
+    pub depositor:Signer<'info>,
 
-    pub mint_a:InterfaceAccount<'info,Mint>,
+    pub mint_a:Box<InterfaceAccount<'info,Mint>>,
 
     #[account(
+        mut,
         associated_token::mint = mint_a,
         associated_token::authority = depositor,
-    )]
-    pub token_account_a:InterfaceAccount<'info,TokenAccount>,
+        associated_token::token_program = token_program,
 
-    pub mint_b:InterfaceAccount<'info,Mint>,
+    )]
+    pub token_account_a:Box<InterfaceAccount<'info,TokenAccount>>,
+
+    pub mint_b:Box<InterfaceAccount<'info,Mint>>,
 
     #[account(
+        mut,
         associated_token::mint = mint_b,
         associated_token::authority = depositor,
+        associated_token::token_program = token_program,
     )]
-    pub token_account_b:InterfaceAccount<'info,TokenAccount>,
+    pub token_account_b:Box<InterfaceAccount<'info,TokenAccount>>,
 
     #[account(
         mut,
@@ -71,17 +76,19 @@ pub struct DepositLiquidity<'info>{
         seeds = [b"lp_mint",fees_in_basis_points.to_le_bytes().as_ref() ,mint_a.key().as_ref(),mint_b.key().as_ref()],
         bump,
     )]
-    pub lp_mint:InterfaceAccount<'info,Mint>,
+    pub lp_mint:Box<InterfaceAccount<'info,Mint>>,
 
     #[account(
         init_if_needed,
         payer = depositor,
         associated_token::mint = lp_mint,
         associated_token::authority = depositor,
-    )]
-    pub token_account_lp:InterfaceAccount<'info,TokenAccount>,
+        associated_token::token_program = token_program,
 
-    // redudant if reserve_a and reserve_b exists then this must exist too. ?
+    )]
+    pub token_account_lp:Box<InterfaceAccount<'info,TokenAccount>>,
+
+    // redundant if reserve_a and reserve_b exists then this must exist too. ?
     #[account(
         seeds = [b"pool_config",fees_in_basis_points.to_le_bytes().as_ref() ,mint_a.key().as_ref(),mint_b.key().as_ref()],
         bump = pool_config.bump,
@@ -89,7 +96,7 @@ pub struct DepositLiquidity<'info>{
         has_one = mint_a  @ CpammsError::NoSuchPoolExist,
         has_one = mint_b  @ CpammsError::NoSuchPoolExist
     )]
-    pub pool_config:Account<'info,PoolConfig>,
+    pub pool_config:Box<Account<'info,PoolConfig>>,
 
     #[account(
         seeds = [b"pool_authority",fees_in_basis_points.to_le_bytes().as_ref() ,mint_a.key().as_ref(),mint_b.key().as_ref()],
@@ -98,16 +105,20 @@ pub struct DepositLiquidity<'info>{
     pub pool_authority:SystemAccount<'info>,
 
     #[account(
+        mut,
         associated_token::mint = mint_a,
         associated_token::authority = pool_authority,
+        associated_token::token_program = token_program,
     )]
-    pub reserve_a:InterfaceAccount<'info,TokenAccount>,
+    pub reserve_a:Box<InterfaceAccount<'info,TokenAccount>>,
 
      #[account(
+        mut,
         associated_token::mint = mint_b,
         associated_token::authority = pool_authority,
+        associated_token::token_program = token_program,
     )]
-    pub reserve_b:InterfaceAccount<'info,TokenAccount>,
+    pub reserve_b:Box<InterfaceAccount<'info,TokenAccount>>,
 
     pub system_program:Program<'info,System>,
     pub token_program:Program<'info,Token2022>,

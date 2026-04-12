@@ -7,6 +7,8 @@ import {
   TOKEN_2022_PROGRAM_ID,
   getMint,
   getAccount,
+  mintTo,
+  createAssociatedTokenAccount,
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
 import assert from "assert";
@@ -32,7 +34,12 @@ const pools: Record<string, Pool> = {};
 const pdaStaticSeeds: Record<string, string> = {
   poolConfig: "pool_config",
   poolAuthority: "pool_authority",
+  lpMint: "lp_mint",
 };
+
+function getLpMintAddressAsync(pool: Pool) {
+  return;
+}
 describe("amms", () => {
   // Configure the client to use the local cluster.
 
@@ -91,7 +98,7 @@ describe("amms", () => {
     assert(mintBAccountData.mintAuthority.equals(alice.publicKey), "6");
     assert.equal(mintBAccountData.decimals, 9, "7");
 
-    if (mintAPubkey < mintBPubkey) {
+    if (mintAPubkey.toString() < mintBPubkey.toString()) {
       mints.mintA = mintAPubkey;
       mints.mintB = mintBPubkey;
     } else {
@@ -191,5 +198,76 @@ describe("amms", () => {
       reserveB: reserveBAddress,
       feesInBasisPoints,
     };
+  });
+
+  it("First deposit to the pool created previously", async () => {
+    const mintAmount = 1000000000;
+    const tokenAAddress = await createAssociatedTokenAccount(
+      connection,
+      alice,
+      mints.mintA,
+      alice.publicKey,
+      { commitment: "confirmed" },
+      TOKEN_2022_PROGRAM_ID,
+      undefined,
+      true,
+    );
+    await mintTo(
+      connection,
+      alice,
+      mints.mintA,
+      tokenAAddress,
+      alice,
+      mintAmount,
+      undefined,
+      { commitment: "confirmed" },
+      TOKEN_2022_PROGRAM_ID,
+    );
+
+    const {
+      value: { amount: accountABalance },
+    } = await connection.getTokenAccountBalance(tokenAAddress);
+    assert.equal(accountABalance, mintAmount.toString());
+
+    const tokenBAddress = await createAssociatedTokenAccount(
+      connection,
+      alice,
+      mints.mintB,
+      alice.publicKey,
+      { commitment: "confirmed" },
+      TOKEN_2022_PROGRAM_ID,
+      undefined,
+      true,
+    );
+    await mintTo(
+      connection,
+      alice,
+      mints.mintB,
+      tokenBAddress,
+      alice,
+      mintAmount,
+      undefined,
+      { commitment: "confirmed" },
+      TOKEN_2022_PROGRAM_ID,
+    );
+
+    const {
+      value: { amount: accountBBalance },
+    } = await connection.getTokenAccountBalance(tokenBAddress);
+    assert.equal(accountBBalance, mintAmount.toString());
+
+    await program.methods
+      .depositLiquidity(pools.ab.feesInBasisPoints, {
+        amountAMinMaxAmountB: [
+          new anchor.BN(10000000),
+          new anchor.BN(1000000000 - 0.05 * 1000000000),
+          new anchor.BN(1000000000 + 0.05 * 1000000000),
+        ],
+      })
+      .accountsPartial({ depositor: alice.publicKey, ...pools.ab })
+      .signers([alice])
+      .rpc();
+
+    const;
   });
 });
