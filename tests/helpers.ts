@@ -12,7 +12,7 @@ import {
 export const sleep = (ms: number) =>
   new Promise((resolve) => setTimeout(resolve, ms));
 export const pdaStaticSeeds: Record<string, string> = {
-  poolConfig: "pool_config",
+  poolInfo: "pool_info",
   poolAuthority: "pool_authority",
   lpMint: "lp_mint",
 };

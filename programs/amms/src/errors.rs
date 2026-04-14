@@ -9,5 +9,14 @@ pub enum CpammsError{
     NoSuchPoolExist,
 
     #[msg("error")]
-    DepositDoesnotExemptTheMinThreshold
+    DepositDoesnotExemptTheMinThreshold,
+
+    #[msg("error")]
+    InvalidInputAmount,
+
+    #[msg("error")]
+    InvariantViolation,
+
+    #[msg("error")]
+    OutputFailsThreshold
 }

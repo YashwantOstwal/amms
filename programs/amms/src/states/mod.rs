@@ -1,2 +1,2 @@
-pub mod pool_config;
-pub use pool_config::*;
+pub mod pool_info;
+pub use pool_info::*;

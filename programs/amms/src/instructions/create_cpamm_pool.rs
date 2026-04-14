@@ -1,20 +1,20 @@
 use anchor_lang::prelude::*;
 use anchor_spl::{associated_token::AssociatedToken,token_interface::{Token2022,TokenAccount,Mint}};
 
-use crate::{ CpammsError, PoolConfig};
+use crate::{ CpammsError, PoolInfo};
 pub fn process_create_cpam_pool(ctx:Context<CreateCpammPool>,fees_in_basis_points:u16)->Result<()>{
     // pool config is created so that we can get all the pools with .getProgramAccounts() filtered by PoolConfig::Discriminator and also filterable by mints and fees
-    let pool_config = &mut ctx.accounts.pool_config;
-    pool_config.mint_a = ctx.accounts.mint_a.key();
-    pool_config.mint_b = ctx.accounts.mint_b.key();
-    pool_config.fees_in_basis_points = fees_in_basis_points;
+    let pool_info = &mut ctx.accounts.pool_info;
+    pool_info.mint_a = ctx.accounts.mint_a.key();
+    pool_info.mint_b = ctx.accounts.mint_b.key();
+    pool_info.fees_in_basis_points = fees_in_basis_points;
     
-    pool_config.set_inner(
-        PoolConfig{
+    pool_info.set_inner(
+        PoolInfo{
             mint_a: ctx.accounts.mint_a.key(),
             mint_b: ctx.accounts.mint_b.key(),
             fees_in_basis_points,
-            bump: ctx.bumps.pool_config
+            bump: ctx.bumps.pool_info
         });
     Ok(())
 
@@ -34,12 +34,12 @@ pub struct CreateCpammPool<'info>{
     #[account(
         init,
         payer = payer,
-        space = 8 + PoolConfig::INIT_SPACE,
-        seeds = [b"pool_config",fees_in_basis_points.to_le_bytes().as_ref() ,mint_a.key().as_ref(),mint_b.key().as_ref()],
+        space = 8 + PoolInfo::INIT_SPACE,
+        seeds = [b"pool_info",fees_in_basis_points.to_le_bytes().as_ref() ,mint_a.key().as_ref(),mint_b.key().as_ref()],
         bump,
         constraint = mint_a.key() < mint_b.key() @ CpammsError::MintANotLexicographicallyLessThanMintB
     )]
-    pub pool_config:Account<'info,PoolConfig>,
+    pub pool_info:Account<'info,PoolInfo>,
 
     #[account(
         seeds = [b"pool_authority",fees_in_basis_points.to_le_bytes().as_ref() ,mint_a.key().as_ref(),mint_b.key().as_ref()],

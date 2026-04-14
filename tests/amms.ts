@@ -10,6 +10,7 @@ import {
   mintTo,
   createAssociatedTokenAccount,
   getAssociatedTokenAddressSync,
+  getAssociatedTokenAddress,
 } from "@solana/spl-token";
 import assert from "assert";
 import {
@@ -18,6 +19,7 @@ import {
   getLpMintAddressSync,
   getReserveAccounts,
   getReserveAddresses,
+  pdaStaticSeeds,
 } from "./helpers";
 
 export const provider = anchor.AnchorProvider.env();
@@ -27,22 +29,21 @@ const { connection } = provider;
 const { payer } = provider.wallet;
 export const program = anchor.workspace.amms as Program<Amms>;
 
-const mints: Record<string, PublicKey> = {};
-
 export interface Pool {
   mintA: PublicKey;
   mintB: PublicKey;
-  poolConfig: PublicKey;
+  poolInfo: PublicKey;
   poolAuthority: PublicKey;
   reserveA: PublicKey;
   reserveB: PublicKey;
   feesInBasisPoints: number;
 }
-const pools: Record<string, Pool> = {};
 
 describe("amms", () => {
   // Configure the client to use the local cluster.
 
+  const mints: Record<string, PublicKey> = {};
+  const pools: Record<string, Pool> = {};
   const alice = new Keypair();
   before(async () => {
     const airdrop = 1e9;
@@ -108,11 +109,11 @@ describe("amms", () => {
   });
 
   it("creating a pool !", async () => {
-    const feesInBasisPoints = 300;
+    const feesInBasisPoints = 300; // 0.3% fees
     const [poolConfigAddress, poolConfigBump] =
       PublicKey.findProgramAddressSync(
         [
-          new TextEncoder().encode("pool_config"),
+          new TextEncoder().encode(pdaStaticSeeds.poolInfo),
           new anchor.BN(feesInBasisPoints).toArrayLike(Buffer, "le"),
           mints.mintA.toBuffer(),
           mints.mintB.toBuffer(),
@@ -149,7 +150,7 @@ describe("amms", () => {
         payer: alice.publicKey,
         mintA: mints.mintA,
         mintB: mints.mintB,
-        poolConfig: poolConfigAddress,
+        poolInfo: poolConfigAddress,
         poolAuthority: poolAuthorityAddress,
         reserveA: reserveAAddress,
         reserveB: reserveBAddress,
@@ -160,14 +161,14 @@ describe("amms", () => {
     pools.ab = {
       mintA: mints.mintA,
       mintB: mints.mintB,
-      poolConfig: poolConfigAddress,
+      poolInfo: poolConfigAddress,
       poolAuthority: poolAuthorityAddress,
       reserveA: reserveAAddress,
       reserveB: reserveBAddress,
       feesInBasisPoints,
     };
 
-    const poolConfigAccount = await program.account.poolConfig.fetch(
+    const poolConfigAccount = await program.account.poolInfo.fetch(
       poolConfigAddress,
     );
 
@@ -192,7 +193,7 @@ describe("amms", () => {
   });
 
   it("First deposit to the pool created previously", async () => {
-    const mintAmount = 1000000000;
+    const mintAmount = 1000000000; // 1 token
     const tokenAAddress = await createAssociatedTokenAccount(
       connection,
       alice,
@@ -288,8 +289,96 @@ describe("amms", () => {
 
     assert.equal(reserveABalance.value.amount, (10000000).toString());
     assert.equal(reserveBBalance.value.amount, (1000000000).toString());
+
+    // spot price defined is 100 token B/token A
+    assert.equal(
+      parseInt(reserveBBalance.value.amount) /
+        parseInt(reserveABalance.value.amount),
+      100,
+    );
   });
 
-  it("Swap token a for token b");
+  it("Swap token a for token b", async () => {
+    const tokenAddressA = await getAssociatedTokenAddress(
+      pools.ab.mintA,
+      alice.publicKey,
+      false,
+      TOKEN_2022_PROGRAM_ID,
+    );
+
+    const tokenAddressB = await getAssociatedTokenAddress(
+      pools.ab.mintB,
+      alice.publicKey,
+      false,
+      TOKEN_2022_PROGRAM_ID,
+    );
+
+    const {
+      value: { amount: tokenBalanceABefore },
+    } = await connection.getTokenAccountBalance(tokenAddressA);
+
+    const {
+      value: { amount: tokenBalanceBBefore },
+    } = await connection.getTokenAccountBalance(tokenAddressB);
+
+    const swapA = true;
+    const swapAmount = BigInt(100000000);
+    assert(swapAmount <= parseInt(tokenBalanceABefore));
+
+    // Lets compute the expected tokenB amount after swap.
+    const [reserveAAccountBefore, reserveBAccountBefore] =
+      await getReserveAccounts(pools.ab);
+
+    const fees = 300;
+    const reserveAAmountAfterSwap = reserveAAccountBefore.amount + swapAmount;
+    const swapAmountPostFees =
+      swapAmount - (swapAmount * BigInt(fees)) / BigInt(10000);
+    const k = reserveAAccountBefore.amount * reserveBAccountBefore.amount;
+
+    const numerator = BigInt(k);
+    const denominator =
+      BigInt(reserveAAccountBefore.amount) + BigInt(swapAmountPostFees);
+
+    const reserveOutAfterSwap =
+      (numerator + denominator - BigInt(1)) / denominator;
+
+    const outputAmount =
+      BigInt(reserveBAccountBefore.amount) - reserveOutAfterSwap;
+    BigInt(
+      Math.ceil(
+        Number(k / (reserveAAccountBefore.amount + swapAmountPostFees)),
+      ),
+    );
+    await program.methods
+      .swapTokens(fees, swapA, new anchor.BN(swapAmount), new anchor.BN(0))
+      .accountsPartial({
+        trader: alice.publicKey,
+        traderAccountA: tokenAddressA,
+        traderAccountB: tokenAddressB,
+        ...pools.ab,
+      })
+      .signers([alice])
+      .rpc();
+    const [reserveAAccountAfter, reserveBAccountAfter] =
+      await getReserveAccounts(pools.ab);
+    assert.equal(reserveAAccountAfter.amount, reserveAAmountAfterSwap);
+    assert.equal(
+      reserveBAccountAfter.amount,
+      reserveBAccountBefore.amount - outputAmount,
+    );
+
+    const {
+      value: { amount: tokenBalanceBAfter },
+    } = await connection.getTokenAccountBalance(tokenAddressB);
+
+    assert.equal(
+      BigInt(tokenBalanceBBefore) + outputAmount,
+      tokenBalanceBAfter,
+    );
+
+    console.log(outputAmount, swapAmountPostFees);
+    // how much did the user get per it for?
+    // new spot price.
+  });
   it("add liquidity");
 });

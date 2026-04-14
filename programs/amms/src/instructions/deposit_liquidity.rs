@@ -1,9 +1,9 @@
 use anchor_lang::prelude::*;
 use anchor_spl::{associated_token::AssociatedToken, token_2022::{ MintToChecked, TransferChecked, mint_to_checked, transfer_checked}, token_interface::{Mint, Token2022, TokenAccount}};
 
-use crate::{CpammsError, PoolConfig};
+use crate::{CpammsError, PoolInfo};
 pub fn process_deposit_liquidity(ctx:Context<DepositLiquidity>,amounts:AmountMinMaxAmount)->Result<()>{
-        let pool_config = &ctx.accounts.pool_config;
+        let pool_info = &ctx.accounts.pool_info;
         let reserve_a = &mut ctx.accounts.reserve_a;
         let reserve_b = &mut ctx.accounts.reserve_b;
 
@@ -31,8 +31,8 @@ pub fn process_deposit_liquidity(ctx:Context<DepositLiquidity>,amounts:AmountMin
         }else {
             0
         };
-        let fees_in_basis_points = pool_config.fees_in_basis_points.to_le_bytes();
-        let pool_authority_seeds:&[&[u8]] = &[b"pool_authority",fees_in_basis_points.as_ref() ,pool_config.mint_a.as_ref(),pool_config.mint_b.as_ref(),&[ctx.bumps.pool_authority]];
+        let fees_in_basis_points = pool_info.fees_in_basis_points.to_le_bytes();
+        let pool_authority_seeds:&[&[u8]] = &[b"pool_authority",fees_in_basis_points.as_ref() ,pool_info.mint_a.as_ref(),pool_info.mint_b.as_ref(),&[ctx.bumps.pool_authority]];
         let signer_seeds = [&pool_authority_seeds[..]];
         
         let mint_lp_tokens_cpi_context = CpiContext::new(ctx.accounts.token_program.key(),MintToChecked{
@@ -115,13 +115,13 @@ pub struct DepositLiquidity<'info>{
 
     // redundant if reserve_a and reserve_b exists then this must exist too. ? 
     #[account(
-        seeds = [b"pool_config",fees_in_basis_points.to_le_bytes().as_ref() ,mint_a.key().as_ref(),mint_b.key().as_ref()],
-        bump = pool_config.bump,
-        constraint = pool_config.fees_in_basis_points == fees_in_basis_points @ CpammsError::NoSuchPoolExist,
+        seeds = [b"pool_info",fees_in_basis_points.to_le_bytes().as_ref() ,mint_a.key().as_ref(),mint_b.key().as_ref()],
+        bump = pool_info.bump,
+        constraint = pool_info.fees_in_basis_points == fees_in_basis_points @ CpammsError::NoSuchPoolExist,
         has_one = mint_a  @ CpammsError::NoSuchPoolExist,
         has_one = mint_b  @ CpammsError::NoSuchPoolExist
     )]
-    pub pool_config:Box<Account<'info,PoolConfig>>,
+    pub pool_info:Box<Account<'info,PoolInfo>>,
 
     #[account(
         seeds = [b"pool_authority",fees_in_basis_points.to_le_bytes().as_ref() ,mint_a.key().as_ref(),mint_b.key().as_ref()],
