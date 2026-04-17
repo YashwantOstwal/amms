@@ -1,0 +1,11 @@
+{
+  "idl": "./target/idl/amms.json",
+  "scripts": {
+    "js": [
+      {
+        "from": "@codama/renderers-js",
+        "args": ["./client"]
+      }
+    ]
+  }
+}

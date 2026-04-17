@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::{associated_token::AssociatedToken,token_interface::{Token2022,TokenAccount,Mint}};
+use anchor_spl::{associated_token::AssociatedToken,token_interface::{TokenAccount,Mint,Token2022}};
 
 use crate::{ CpammsError, PoolInfo};
 pub fn process_create_cpam_pool(ctx:Context<CreateCpammPool>,fees_in_basis_points:u16)->Result<()>{
@@ -26,10 +26,9 @@ pub struct CreateCpammPool<'info>{
     #[account(mut)]
     pub payer:Signer<'info>,
 
+    pub mint_a:Box<InterfaceAccount<'info,Mint>>,
 
-    pub mint_a:InterfaceAccount<'info,Mint>,
-
-    pub mint_b:InterfaceAccount<'info,Mint>,
+    pub mint_b:Box<InterfaceAccount<'info,Mint>>,
 
     #[account(
         init,
@@ -39,7 +38,7 @@ pub struct CreateCpammPool<'info>{
         bump,
         constraint = mint_a.key() < mint_b.key() @ CpammsError::MintANotLexicographicallyLessThanMintB
     )]
-    pub pool_info:Account<'info,PoolInfo>,
+    pub pool_info:Box<Account<'info,PoolInfo>>,
 
     #[account(
         seeds = [b"pool_authority",fees_in_basis_points.to_le_bytes().as_ref() ,mint_a.key().as_ref(),mint_b.key().as_ref()],
@@ -54,7 +53,7 @@ pub struct CreateCpammPool<'info>{
         associated_token::authority = pool_authority,
         associated_token::token_program = token_program
     )]
-    pub reserve_a:InterfaceAccount<'info,TokenAccount>,
+    pub reserve_a:Box<InterfaceAccount<'info,TokenAccount>>,
 
      #[account(
         init,
@@ -63,7 +62,7 @@ pub struct CreateCpammPool<'info>{
         associated_token::authority = pool_authority,
         associated_token::token_program = token_program
     )]
-    pub reserve_b:InterfaceAccount<'info,TokenAccount>,
+    pub reserve_b:Box<InterfaceAccount<'info,TokenAccount>>,
 
     #[account(
         init,
@@ -74,7 +73,7 @@ pub struct CreateCpammPool<'info>{
         seeds = [b"lp_mint",fees_in_basis_points.to_le_bytes().as_ref() ,mint_a.key().as_ref(),mint_b.key().as_ref()],
         bump,
     )]
-    pub lp_mint:InterfaceAccount<'info,Mint>,
+    pub lp_mint:Box<InterfaceAccount<'info,Mint>>,
 
     pub token_program:Program<'info,Token2022>,
     pub associated_token_program:Program<'info,AssociatedToken>,

@@ -5,7 +5,7 @@ use anchor_spl::{
     token_interface::{Mint, TokenAccount,Token2022},
 };
 
-use crate::CpammsError;
+use crate::{CpammsError, PoolInfo};
 
 pub fn process_swap_tokens(
     ctx: Context<SwapTokens>,
@@ -143,6 +143,16 @@ pub struct SwapTokens<'info> {
     )]
     pub trader_account_b: Box<InterfaceAccount<'info, TokenAccount>>,
 
+    #[account(
+        seeds = [b"pool_info",fees_in_basis_points.to_le_bytes().as_ref() ,mint_a.key().as_ref(),mint_b.key().as_ref()],
+        bump = pool_info.bump,
+        constraint = mint_a.key() < mint_b.key() @ CpammsError::MintANotLexicographicallyLessThanMintB,
+        constraint = pool_info.fees_in_basis_points == fees_in_basis_points @ CpammsError::NoSuchPoolExist,
+        has_one = mint_a  @ CpammsError::NoSuchPoolExist,
+        has_one = mint_b  @ CpammsError::NoSuchPoolExist
+    )]
+    pub pool_info:Box<Account<'info,PoolInfo>>,
+    
     #[account(
         seeds = [b"pool_authority",fees_in_basis_points.to_le_bytes().as_ref() ,mint_a.key().as_ref(),mint_b.key().as_ref()],
         bump

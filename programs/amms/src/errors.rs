@@ -18,5 +18,8 @@ pub enum CpammsError{
     InvariantViolation,
 
     #[msg("error")]
-    OutputFailsThreshold
+    OutputFailsThreshold,
+
+    #[msg("error")]
+    DepositFailedAtThisSpotRange
 }

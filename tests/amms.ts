@@ -21,6 +21,7 @@ import {
   getReserveAddresses,
   pdaStaticSeeds,
 } from "./helpers";
+import { IDL } from "@coral-xyz/anchor/dist/cjs/native/system";
 
 export const provider = anchor.AnchorProvider.env();
 anchor.setProvider(provider);
@@ -39,6 +40,7 @@ export interface Pool {
   feesInBasisPoints: number;
 }
 
+const DEFAULT_FEES_IN_BASIS_POINTS = 300;
 describe("amms", () => {
   // Configure the client to use the local cluster.
 
@@ -99,7 +101,7 @@ describe("amms", () => {
     assert(mintBAccountData.mintAuthority.equals(alice.publicKey), "6");
     assert.equal(mintBAccountData.decimals, 9, "7");
 
-    if (mintAPubkey.toBase58() < mintBPubkey.toBase58()) {
+    if (mintAPubkey < mintBPubkey) {
       mints.mintA = mintAPubkey;
       mints.mintB = mintBPubkey;
     } else {
@@ -109,7 +111,7 @@ describe("amms", () => {
   });
 
   it("creating a pool !", async () => {
-    const feesInBasisPoints = 300; // 0.3% fees
+    const feesInBasisPoints = DEFAULT_FEES_IN_BASIS_POINTS; // 0.3% fees
     const [poolConfigAddress, poolConfigBump] =
       PublicKey.findProgramAddressSync(
         [
@@ -145,7 +147,7 @@ describe("amms", () => {
     );
 
     await program.methods
-      .createCpammPool(300)
+      .createCpammPool(DEFAULT_FEES_IN_BASIS_POINTS)
       .accountsPartial({
         payer: alice.publicKey,
         mintA: mints.mintA,
@@ -193,7 +195,7 @@ describe("amms", () => {
   });
 
   it("First deposit to the pool created previously", async () => {
-    const mintAmount = 1000000000; // 1 token
+    const mintAmount = 10000000000; // 10 token
     const tokenAAddress = await createAssociatedTokenAccount(
       connection,
       alice,
@@ -262,8 +264,8 @@ describe("amms", () => {
     await program.methods
       .depositLiquidity(pools.ab.feesInBasisPoints, {
         amountAMinMaxAmountB: [
-          new anchor.BN(10000000),
-          new anchor.BN(1000000000 - 0.05 * 1000000000),
+          new anchor.BN(10000000), // 0.01 token.
+          new anchor.BN(1000000000 - 0.05 * 1000000000), // 1 token +- 0.05 token
           new anchor.BN(1000000000 + 0.05 * 1000000000),
           // first deposit will be median of the above 2 which turns out to be 1000000000
         ],
@@ -298,6 +300,36 @@ describe("amms", () => {
     );
   });
 
+  it("Successive deposition", async () => {
+    const [reserveAAccount, reserveBAccount] = await getReserveAccounts(
+      pools.ab,
+    );
+    const [depositA, depositB] = [
+      reserveAAccount.amount,
+      reserveBAccount.amount,
+    ];
+
+    const lpTokenAddress = await getLpAssociatedTokenAddressAsync(
+      alice.publicKey,
+      pools.ab,
+    );
+    const {
+      value: { amount: lpTokenBalance },
+    } = await connection.getTokenAccountBalance(lpTokenAddress);
+
+    await program.methods
+      .depositLiquidity(pools.ab.feesInBasisPoints, {
+        amountAMinMaxAmountB: [
+          new anchor.BN(depositA), //
+          new anchor.BN(depositB), // 1 token +- 0.05 token
+          new anchor.BN(depositB),
+          // first deposit will be median of the above 2 which turns out to be 1000000000
+        ],
+      })
+      .accountsPartial({ depositor: alice.publicKey, ...pools.ab })
+      .signers([alice])
+      .rpc();
+  });
   it("Swap token a for token b", async () => {
     const tokenAddressA = await getAssociatedTokenAddress(
       pools.ab.mintA,
@@ -329,7 +361,7 @@ describe("amms", () => {
     const [reserveAAccountBefore, reserveBAccountBefore] =
       await getReserveAccounts(pools.ab);
 
-    const fees = 300;
+    const fees = DEFAULT_FEES_IN_BASIS_POINTS;
     const reserveAAmountAfterSwap = reserveAAccountBefore.amount + swapAmount;
     const swapAmountPostFees =
       swapAmount - (swapAmount * BigInt(fees)) / BigInt(10000);
@@ -376,9 +408,21 @@ describe("amms", () => {
       tokenBalanceBAfter,
     );
 
-    console.log(outputAmount, swapAmountPostFees);
     // how much did the user get per it for?
     // new spot price.
   });
-  it("add liquidity");
+  it("withdraw liquidity testing", async () => {
+    const lpTokenAccount = await getLpAssociatedTokenAccount(
+      alice.publicKey,
+      pools.ab,
+    );
+    await program.methods
+      .withdrawLiquidity(
+        DEFAULT_FEES_IN_BASIS_POINTS,
+        new anchor.BN(lpTokenAccount.amount),
+      )
+      .accountsPartial({ depositor: alice.publicKey, ...pools.ab })
+      .signers([alice])
+      .rpc();
+  });
 });
